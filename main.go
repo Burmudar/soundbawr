@@ -4,10 +4,73 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"time"
 
+	"github.com/Burmudar/soundbawr/fsm"
 	"github.com/godbus/dbus"
 	"github.com/sqp/pulseaudio"
 )
+
+const (
+	BarOff          fsm.State     = 0
+	BarOn           fsm.State     = 1
+	GracePeriod     fsm.State     = 2
+	GracePeriodTime time.Duration = 15 * time.Minute
+)
+
+type Soundbar struct {
+	fsm              fsm.FSM
+	gracePeriodTimer *time.Timer
+}
+
+func NewSoundbar() *Soundbar {
+	return &Soundbar{fsm.New(
+		BarOff,
+		map[fsm.State][]fsm.State{
+			BarOff:      []fsm.State{BarOn},
+			BarOn:       []fsm.State{GracePeriod},
+			GracePeriod: []fsm.State{BarOff, BarOn},
+		},
+		[]fsm.Callback{fsm.DebugCallback},
+	), nil}
+}
+
+func (s *Soundbar) onAudioDeviceChange(state DeviceState) {
+	switch state {
+	case DeviceRunning:
+		{
+			s.AudioStarted()
+			break
+		}
+	case DeviceSuspended:
+	case DeviceIdle:
+		{
+			s.AudioStopped()
+			break
+		}
+	default:
+		{
+			fmt.Printf("Device State: %s\n", state)
+		}
+	}
+}
+
+func (s *Soundbar) AudioStarted() {
+	s.fsm.Transition(BarOn)
+	if s.gracePeriodTimer != nil {
+		s.gracePeriodTimer.Stop()
+		s.gracePeriodTimer = nil
+	}
+}
+
+func (s *Soundbar) AudioStopped() {
+	if (s.fsm.CurrentState() != GracePeriod) && s.gracePeriodTimer == nil {
+		s.fsm.Transition(GracePeriod)
+		s.gracePeriodTimer = time.AfterFunc(GracePeriodTime, func() {
+			s.fsm.Transition(BarOff)
+		})
+	}
+}
 
 type DeviceState uint32
 
@@ -29,6 +92,7 @@ func (s DeviceState) String() string {
 
 type Client struct {
 	*pulseaudio.Client
+	soundbar *Soundbar
 }
 
 type OnDeviceStateUpdated interface {
@@ -70,7 +134,7 @@ func (cl *Client) DeviceActivePortUpdated(path dbus.ObjectPath, values []uint32)
 
 func (cl *Client) DeviceStateUpdated(path dbus.ObjectPath, state uint32) {
 	var deviceState = DeviceState(state)
-	log.Printf("State updated: %v %v", path, deviceState)
+	cl.soundbar.onAudioDeviceChange(deviceState)
 }
 
 func UnkownSignal(s *dbus.Signal) {
@@ -82,6 +146,10 @@ func UnkownSignal(s *dbus.Signal) {
 }
 
 func main() {
+	fsm.StateToString[BarOff] = "BarOff"
+	fsm.StateToString[BarOn] = "BarOn"
+	fsm.StateToString[GracePeriod] = "GracePeriod"
+
 	pulseaudio.PulseCalls["Device.StateUpdated"] = func(m pulseaudio.Msg) {
 		m.O.(OnDeviceStateUpdated).DeviceStateUpdated(m.P, m.D[0].(uint32))
 	}
@@ -92,7 +160,7 @@ func main() {
 		log.Panicln("connect", e)
 	}
 
-	client := &Client{pulse}
+	client := &Client{pulse, NewSoundbar()}
 	pulse.Register(client)
 	defer pulse.Unregister(client)
 
@@ -110,6 +178,7 @@ func main() {
 		state, _ := dev.Uint32("State")
 		name, _ := dev.String("Name")
 		log.Printf("%s current state: %v", name, state)
+		client.soundbar.onAudioDeviceChange(DeviceState(state))
 	}
 	fmt.Printf("Path: %v\n", sinks[1])
 	client.ListenForSignal("Device.StateUpdated", sinks[1])
