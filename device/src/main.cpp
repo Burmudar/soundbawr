@@ -5,6 +5,8 @@
 #include <IRsend.h>
 #include <IRutils.h>
 #include <Device.pb.h>
+#include <pb_common.h>
+#include <pb_decode.h>
 
 int RECV_PIN = 14;
 int SEND_PIN = 12;
@@ -13,6 +15,8 @@ IRsend irsend(SEND_PIN);
 decode_results results;
 
 int status = WL_IDLE_STATUS;
+
+WiFiServer server(30000);
 
 void printCurrentNet() {
   Serial.print("SSID: ");
@@ -72,6 +76,8 @@ void setup()
 
   printCurrentNet();
   printWifiData();
+  
+  server.begin();
 }
 
 void IRRecvProcessing() {
@@ -92,20 +98,78 @@ void IRRecvProcessing() {
   }
 }
 
+void processCommand(Device_Command* cmd) {
+  if (cmd->device == Device_Command_DeviceType_SOUND_BAR && cmd->action == Device_Command_Action_TURN_ON) {
+    uint64_t JBL_PWR = 0x61FFD827UL;
+    Serial.println("Sound on (NEC)");
+    irsend.sendNEC(JBL_PWR);
+  }
 
-void IRSendProcessing() {
-  uint64_t JBL_PWR = 0x61FFD827UL;
-  // send the samsung code twice quickly to ensure it is picked up
-  uint64_t SAMSAUNG_PWR = 0xE0E040BFUL;
-  Serial.println("TV on (SAMSUNG)");
-  irsend.sendSAMSUNG(SAMSAUNG_PWR, 32, 2);
-  delay(10000);
-  Serial.println("Sound on (NEC)");
-  irsend.sendNEC(JBL_PWR);
-  delay(10000);
+  if (cmd->device == Device_Command_DeviceType_TV && cmd->action == Device_Command_Action_TURN_ON) {
+    uint64_t SAMSAUNG_PWR = 0xE0E040BFUL;
+    Serial.println("TV on (SAMSUNG)");
+    irsend.sendSAMSUNG(SAMSAUNG_PWR, 32, 2);
+  }
+
+}
+
+bool callback(pb_istream_t *stream, uint8_t *buf, size_t count){
+  WiFiClient* client = (WiFiClient*)stream->state;
+
+  size_t bytesRead = client->readBytes(buf, count);
+  Serial.printf("Read %d bytes", bytesRead);
+  Serial.println();
+
+  if (!client->connected() || bytesRead == 0 || bytesRead < count){
+    stream->bytes_left = 0;
+    return false;
+  }
+
+  return true;
+}
+
+void handleClientRequest(WiFiClient* client) {
+  Serial.println("Processing connected client!");
+  while(client->connected()) {
+    uint8_t buff[Device_Command_size+1];
+    
+    uint read = client->readBytes(buff, Device_Command_size+1);
+
+    Serial.printf("Read %d bytes\n", read);
+
+    Device_Command msg = Device_Command_init_zero;
+
+    pb_istream_t stream = /*{&callback, client, SIZE_MAX};*/ pb_istream_from_buffer(buff, Device_Command_size+1);
+    pb_decode(&stream, Device_Command_fields, &msg);
+
+    String device = "<NONE>";
+    if (msg.device == Device_Command_DeviceType_TV) {
+      device = "TV";
+    } else if (msg.device == Device_Command_DeviceType_SOUND_BAR) {
+      device = "SOUNDBAR";
+    }
+
+    String action = "<NONE>";
+    if (msg.action == Device_Command_Action_TURN_ON) {
+      action = "TURN_ON";
+    } else if (msg.action == Device_Command_Action_TURN_OFF) {
+      action = "TURN_OFF";
+    }
+    Serial.println("Device: " + device);
+    Serial.println("Action: " + action);
+
+    processCommand(&msg);
+  }
+  Serial.println("Processing Done!");
+  client->stop();
 }
 
 void loop()
 {
-  IRSendProcessing();
+  WiFiClient client = server.available();
+
+  if (client) {
+    handleClientRequest(&client);
+  }
+
 }

@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-var StateToString map[State]string
+var StateToString map[State]string = make(map[State]string)
 
 type UnkownStateTransition struct {
 	from, to State

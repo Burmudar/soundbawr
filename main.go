@@ -3,10 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"reflect"
 	"time"
 
+	"github.com/golang/protobuf/proto"
+
 	"github.com/Burmudar/soundbawr/fsm"
+	Device "github.com/Burmudar/soundbawr/server/device"
 	"github.com/godbus/dbus"
 	"github.com/sqp/pulseaudio"
 )
@@ -31,7 +35,7 @@ func NewSoundbar() *Soundbar {
 			BarOn:       []fsm.State{GracePeriod},
 			GracePeriod: []fsm.State{BarOff, BarOn},
 		},
-		[]fsm.Callback{fsm.DebugCallback},
+		[]fsm.Callback{commandDevice},
 	), nil}
 }
 
@@ -143,6 +147,49 @@ func UnkownSignal(s *dbus.Signal) {
 	log.Println("Path", s.Path)
 	log.Println("Body", s.Body)
 	log.Println("Sender", s.Sender)
+}
+
+func commandDevice(old, new fsm.State) {
+	if new == BarOn {
+		log.Println("Sending command to turn sound bar ON")
+		err := sendCommand(&Device.Command{
+			Action: Device.Command_TURN_ON,
+			Device: Device.Command_SOUND_BAR,
+		})
+		if err != nil {
+			log.Fatalf("Failed to send command: %v\n", err)
+		} else {
+			log.Println("Command sent!")
+		}
+	}
+}
+
+func sendCommand(cmd *Device.Command) error {
+	conn, err := net.Dial("tcp", "192.168.1.134:30000")
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+	if err != nil {
+		return err
+	}
+
+	var command = Device.Command{Action: Device.Command_TURN_ON, Device: Device.Command_SOUND_BAR}
+
+	data, err := proto.Marshal(&command)
+	if err != nil {
+		return err
+	}
+
+	written, err := conn.Write(data)
+
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Wrote %d bytes", written)
+	return nil
 }
 
 func main() {
