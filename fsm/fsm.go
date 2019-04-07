@@ -64,6 +64,10 @@ func (fsm *fsm) fireOnTransition(oldState, newState State) {
 }
 
 func (fsm *fsm) Transition(newState State) error {
+	if fsm.currentState == newState {
+		return nil
+	}
+
 	states, ok := fsm.transitions[fsm.currentState]
 
 	if !ok {
