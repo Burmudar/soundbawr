@@ -35,7 +35,7 @@ func NewSoundbar() *Soundbar {
 			BarOn:       []fsm.State{GracePeriod},
 			GracePeriod: []fsm.State{BarOff, BarOn},
 		},
-		[]fsm.Callback{commandDevice},
+		[]fsm.Callback{fsm.DebugCallback, commandDevice},
 	), nil}
 }
 
@@ -150,7 +150,7 @@ func UnkownSignal(s *dbus.Signal) {
 }
 
 func commandDevice(old, new fsm.State) {
-	if new == BarOn {
+	if old != GracePeriod && new == BarOn {
 		log.Println("Sending command to turn sound bar ON")
 		err := sendCommand(&Device.Command{
 			Action: Device.Command_TURN_ON,
