@@ -101,8 +101,11 @@ void IRRecvProcessing() {
 void processCommand(Device_Command* cmd) {
   if (cmd->device == Device_Command_DeviceType_SOUND_BAR && cmd->action == Device_Command_Action_TURN_ON) {
     uint64_t JBL_PWR = 0x61FFD827UL;
-    Serial.println("Sound on (NEC)");
-    irsend.sendNEC(JBL_PWR);
+    for(int i = 0; i < 1; i++){
+      Serial.printf("Sound on (NEC): %d \n", i);
+      irsend.sendNEC(JBL_PWR);
+      delay(500);
+    }
   }
 
   if (cmd->device == Device_Command_DeviceType_TV && cmd->action == Device_Command_Action_TURN_ON) {
@@ -128,8 +131,9 @@ bool callback(pb_istream_t *stream, uint8_t *buf, size_t count){
   return true;
 }
 
-void handleClientRequest(WiFiClient* client) {
+Device_Command* handleClientRequest(WiFiClient* client) {
   Serial.println("Processing connected client!");
+  Device_Command* cmd ;
   while(client->connected()) {
     uint8_t buff[Device_Command_size+1];
     
@@ -158,10 +162,10 @@ void handleClientRequest(WiFiClient* client) {
     Serial.println("Device: " + device);
     Serial.println("Action: " + action);
 
-    processCommand(&msg);
+    cmd = &msg;
   }
   Serial.println("Processing Done!");
-  client->stop();
+  return cmd;
 }
 
 void loop()
@@ -169,7 +173,7 @@ void loop()
   WiFiClient client = server.available();
 
   if (client) {
-    handleClientRequest(&client);
+    Device_Command* cmd = handleClientRequest(&client);
+    processCommand(cmd);
   }
-
 }
