@@ -1,0 +1,18 @@
+syntax = "proto3";
+package Device;
+
+message Command {
+	
+	enum DeviceType {
+		TV = 0;
+		SOUND_BAR = 1;
+	}
+
+	enum Action {
+		TURN_OFF = 0;
+		TURN_ON = 1;
+	}
+
+	DeviceType device = 1;
+	Action action = 2;
+}
