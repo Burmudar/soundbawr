@@ -165,7 +165,7 @@ func commandDevice(old, new fsm.State) {
 }
 
 func sendCommand(cmd *Device.Command) error {
-	conn, err := net.Dial("tcp", "192.168.1.134:30000")
+	conn, err := net.Dial("udp", "192.168.1.134:30000")
 	defer func() {
 		if conn != nil {
 			conn.Close()

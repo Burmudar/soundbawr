@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
 #include <IRremoteESP8266.h>
 #include <IRrecv.h>
 #include <IRsend.h>
@@ -16,7 +17,7 @@ decode_results results;
 
 int status = WL_IDLE_STATUS;
 
-WiFiServer server(30000);
+WiFiUDP server;
 
 void printCurrentNet() {
   Serial.print("SSID: ");
@@ -77,7 +78,7 @@ void setup()
   printCurrentNet();
   printWifiData();
   
-  server.begin();
+  server.begin(30000);
 }
 
 void IRRecvProcessing() {
@@ -131,15 +132,19 @@ bool callback(pb_istream_t *stream, uint8_t *buf, size_t count){
   return true;
 }
 
-Device_Command* handleClientRequest(WiFiClient* client) {
-  Serial.println("Processing connected client!");
+Device_Command* handleClientRequest(WiFiUDP* client, uint8_t size) {
+  Serial.println("Processing connected UDP packet!");
   Device_Command* cmd ;
-  while(client->connected()) {
-    uint8_t buff[Device_Command_size+1];
+  uint8_t total = size;
+  while(total > 0) {
+    uint8_t buff[Device_Command_size];
     
-    uint read = client->readBytes(buff, Device_Command_size+1);
+    uint read = client->readBytes(buff, Device_Command_size);
+
+    total -= read;
 
     Serial.printf("Read %d bytes\n", read);
+    Serial.printf("Left %d \n", total);
 
     Device_Command msg = Device_Command_init_zero;
 
@@ -164,16 +169,16 @@ Device_Command* handleClientRequest(WiFiClient* client) {
 
     cmd = &msg;
   }
-  Serial.println("Processing Done!");
+  Serial.println("Processing UDP Packet done!");
   return cmd;
 }
 
 void loop()
 {
-  WiFiClient client = server.available();
+  uint8_t packetSize = server.parsePacket();
 
-  if (client) {
-    Device_Command* cmd = handleClientRequest(&client);
+  if (packetSize) {
+    Device_Command* cmd = handleClientRequest(&server, packetSize);
     processCommand(cmd);
   }
 }
