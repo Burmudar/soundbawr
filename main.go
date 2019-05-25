@@ -9,7 +9,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
-	"github.com/Burmudar/soundbawr/fsm"
+	fsm "github.com/Burmudar/go-fsm"
 	Device "github.com/Burmudar/soundbawr/server/device"
 	"github.com/godbus/dbus"
 	"github.com/sqp/pulseaudio"
