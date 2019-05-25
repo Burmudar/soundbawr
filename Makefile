@@ -31,7 +31,7 @@ extract-nanopb:
 ifneq ($(wildcard nanopb),)
 	@rm -rf nanopb
 endif
-	@tar -xvf ${NANOPB_FILENAME}
+	@tar -xf ${NANOPB_FILENAME}
 	@mv $(subst .tar.gz,,${NANOPB_FILENAME}) nanopb
 	@echo "extracted ${NANOPB_FILENAME} to nanopb"
 
