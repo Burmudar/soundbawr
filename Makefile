@@ -21,7 +21,7 @@ ARDUINO_PROTOBUF_DIR := ${ARDUINO_DIR}/lib/device
 SERVICE_DIR := ${CWD}/service
 SERVICE_PROTOBUF_DIR := ${SERVICE_DIR}/device
 
-HAS_PROTOBUF := $(shell which protoc > /dev/null && echo $?)
+HAS_PROTOBUF := $(shell which protoc > /dev/null 2>&1 && echo $$?)
 
 download-nanopb: 
 	@echo "downlload nanopb to ${NANOPB_FILENAME}"

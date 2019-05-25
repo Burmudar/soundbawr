@@ -6,8 +6,9 @@ ifndef ${OS}
 	OS := $(shell uname -s)
 endif
 
-HAS_VIRTUALENV := $(shell which virutalenv > /dev/null && echo $?)
-HAS_PIP := $(shell which pip > /dev/null && echo $?)
+HAS_VIRTUALENV := $(shell which virtualenv > /dev/null 2>&1; echo $$?)
+HAS_PIP := $(shell which pip > /dev/null 2>&1; echo $$?)
+
 
 BOLD := "\\e[1m"
 GREEN := "\\e[32m"
