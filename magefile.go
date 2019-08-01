@@ -4,13 +4,11 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"os"
 	"path"
 	"runtime"
-	"time"
+
+	"github.com/magefile/mage/sh"
 )
 
 type ProjectPath struct {
@@ -41,82 +39,86 @@ func (p *ProjectPath) ProtobufDir() string {
 var arduinoPaths = &ProjectPath{"device", "lib/device"}
 var servicePaths = &ProjectPath{"service", "device"}
 
-func progressBar(current, total, segments int64) {
-	bytesPerSeg := total / segments
-	var currentSeg int64
+var Curl = sh.OutCmd("curl")
+var Tar = sh.OutCmd("tar")
+var Bash = sh.OutCmd("bash", "-c")
+var BrewInstall = sh.OutCmd("brew", "install")
+var AptInstall = sh.OutCmd("sudo", "apt", "install")
+var GoGet = sh.OutCmd("go", "get", "-u")
+var Protoc = sh.OutCmd("protoc")
 
-	if current != int64(0) {
-		currentSeg = current / bytesPerSeg
-	}
-
-	fmt.Printf("\r[")
-	for i := int64(0); i < currentSeg; i++ {
-		fmt.Printf("#")
-	}
-
-	for i := int64(0); i < segments-currentSeg; i++ {
-		fmt.Printf(" ")
-	}
-	fmt.Printf("]")
+func isMac() bool {
+	return runtime.GOOS == "darwin"
 }
 
-func download(url, filename string) error {
-	resp, err := http.Get(url)
-
-	if err != nil {
-		log.Printf("Failed to download: %s", url)
-		return err
+func platform() string {
+	if isMac() {
+		return "macosx"
 	}
-
-	fmt.Printf("Content-Length: %v\n", resp.ContentLength)
-
-	size := resp.ContentLength
-	var i int64
-	var total float32
-	var now *time.Time
-	var window []byte = make([]byte, 64)
-	fp, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	defer fp.Close()
-	for i < size {
-		n, err := resp.Body.Read(window)
-		fp.Write(window[:n])
-		if err != nil && err != io.EOF {
-			return err
-		}
-
-		if now == nil {
-			t := time.Now()
-			now = &t
-		}
-
-		total += float32(len(window))
-		i += int64(n)
-
-		if time.Now().Sub(*now).Seconds() >= 1 {
-			progressBar(i, size, 100)
-			fmt.Printf(" %3.2f MB/s", total/(1024*1024))
-			total = 0
-			now = nil
-		}
-	}
-	progressBar(i, size, 100)
-	fmt.Printf("%3.2f MB/s", total/(1024*1024))
-	fmt.Println()
-	return nil
+	return "linux"
 }
 
-func DownloadNanoPB() error {
-	platform := "linux"
+func downloadNanoPB() (string, error) {
 
-	if runtime.GOOS == "darwin" {
-		platform = "macosx"
-	}
-
-	filename := fmt.Sprintf("nanopb-0.3.9.3-%s-x86.tar.gz", platform)
-	log.Println("download nanopb to %v", filename)
+	filename := fmt.Sprintf("nanopb-0.3.9.3-%s-x86.tar.gz", platform())
+	fmt.Printf("download nanopb to %v\n", filename)
 
 	url := fmt.Sprintf("https://jpa.kapsi.fi/nanopb/download/%s", filename)
-	return download(url, filename)
+
+	_, err := Curl(url, "-o", filename)
+	return filename, err
+}
+
+func extract(filename string) (string, error) {
+	return Tar("-x", "-v", "-f", filename)
+}
+
+func install(pkg string) (string, error) {
+	var installFn func(args ...string) (string, error) = AptInstall
+	if isMac() {
+		installFn = BrewInstall
+	}
+	fmt.Printf("installing [%v]\n", pkg)
+	output, err := installFn(pkg)
+	fmt.Printf("done.\n")
+	return output, err
+}
+
+func installProtobuf() {
+	_, err := Bash("which protoc > /dev/null")
+	if sh.ExitStatus(err) == 0 {
+		fmt.Printf("protobuf already installed\n")
+	} else if isMac() {
+		install("protobuf")
+	} else {
+		install("protobuf-compiler")
+	}
+
+	fmt.Printf("install proto-gen-go\n")
+	GoGet("github.com/golang/protobuf/protoc-gen-go")
+	fmt.Printf("done.\n")
+}
+
+func GenerateServiceProtobuf() (string, error) {
+	sh.Run("mkdir", "-p", servicePaths.ProtobufDir())
+	dest := fmt.Sprintf("--go_out=%s", servicePaths.ProtobufDir())
+	fmt.Printf("Generating service protobuf files to: %s", servicePaths.ProtobufDir())
+	return Protoc(dest, "Device.proto")
+}
+
+func GenerateDeviceProtoBuf() (string, error) {
+	pluginArg := "--plugin=protoc-gen-nanopb=nanopb/generator/protoc-gen-nanopb"
+	dest := fmt.Sprintf("--nanopb_out=%s", arduinoPaths.ProtobufDir())
+	fmt.Printf("Generating device protobuf files to: %s", arduinoPaths.ProtobufDir())
+	return Protoc(pluginArg, dest, "Device.proto")
+}
+
+func Protobuf() {
+	installProtobuf()
+	out, _ := GenerateServiceProtobuf()
+	fmt.Println(out)
+	out, _ = GenerateDeviceProtoBuf()
+	fmt.Println(out)
 }
 
 func Setup() error {
